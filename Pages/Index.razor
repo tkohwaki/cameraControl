@@ -1,0 +1,90 @@
+@page "/"
+@using System.IO
+@inject IJSRuntime JSRuntime
+<div style="font-size:small;padding-left:2em;padding-right:2em">
+video操作サンプル<br/>
+blazor wasmにてC#からJavascriptを呼出しています。<br/>
+video画面をタップするとキャプチャできます。
+</div>
+<span style="font-weight:bold">@CameraMode</span><br/>
+<div style="width:100%;display:flex;justify-content:center">
+<video id="myVideo" autoplay style="@videoStyle" @onclick="btnCapture"></video><br/><br/>
+</div>
+<br/>
+<div style="width:100%;display:flex;justify-content:center">
+<button class="btn btn-primary" @onclick="btnCameraClicked">@btnTitle</button>&nbsp;&nbsp;
+<button class="btn btn-primary" @onclick="btnChangeCamera">カメラ切り替え</button><br/>
+</div>
+<canvas id="myCanvas" style="display:none"/>
+<br/>
+<hr/>
+<div style="width:100%;display:flex;justify-content:center">
+<img style="@imgSize" src="@imgUrl"/>
+</div>
+<br/>
+<span id="msgarea" style="color:red;font-weight:bold"></span>
+<span>@wasmMesg</span>
+@code {
+    private string btnTitle = "カメラ起動";
+    private bool cameraStarted = false;
+    private bool backCamera = true;
+    private string CameraMode = "背面カメラ";
+    private string imgUrl = "images/blank120x160.png";
+    private string imgSize = "width:120px;height:160px";
+    private string wasmMesg = "";
+    private string videoStyle = "width:240px;height:320px;border:1px solid black;";
+    protected async Task btnCameraClicked() {
+        if (!cameraStarted) {
+            await StartCamera();
+        } else {
+            await JSRuntime.InvokeVoidAsync("stopCamera");
+            cameraStarted = false;
+            btnTitle = "カメラ起動";
+        }
+    }
+    private async Task StartCamera() {
+        string face = "environment";
+        if (!backCamera) {
+            face = "user";
+        }
+        var info = await JSRuntime.InvokeAsync<VideoInfo>("startCamera","myVideo",face,240,320,"msgarea");
+        //videoStyle = $"width:{info.Width}px;height:{info.Height}px;border:1px solid black;";
+        this.StateHasChanged();
+        cameraStarted = true;
+        btnTitle = "カメラ停止";
+    }
+    protected async Task btnChangeCamera() {
+        if (cameraStarted) {
+            await JSRuntime.InvokeVoidAsync("stopCamera");
+        }
+        backCamera = !backCamera;
+        CameraMode = backCamera ? "背面カメラ" : "前面カメラ";
+        await StartCamera();
+    }
+    protected async Task btnCapture() {
+        try {
+            var info = await JSRuntime.InvokeAsync<CaptureInfo>("captureImage","myCanvas");
+            imgUrl = info.Url;
+            imgSize = $"width:{info.VideoWidth}px;height:{info.VideoHeight}px;";
+            wasmMesg = $"Width={info.Width}, Height={info.Height}, VideoWidth={info.VideoWidth}, VideoHeight={info.VideoHeight}";
+            byte[] buf = Convert.FromBase64String(info.Url.Substring(22));
+            MemoryStream stm = new MemoryStream(buf);
+            //System.Drawing.Bitmap bmp = (System.Drawing.Bitmap)System.Drawing.Bitmap.FromStream(stm);
+            stm.Close();
+            this.StateHasChanged();
+        } catch (Exception e) {
+            wasmMesg = e.Message;
+        }
+    }
+    class CaptureInfo {
+        public string Url { get; set; }
+        public int Width { get; set; }
+        public int Height { get; set; }
+        public int VideoWidth { get; set;}
+        public int VideoHeight { get; set;}
+    }
+    class VideoInfo {
+        public int Width {get; set;}
+        public int Height {get; set;}
+    }
+}
